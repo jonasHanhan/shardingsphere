@@ -26,13 +26,19 @@ import org.apache.shardingsphere.database.protocol.postgresql.packet.command.que
 import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.PostgreSQLDataRowPacket;
 import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.PostgreSQLEmptyQueryResponsePacket;
 import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.PostgreSQLRowDescriptionPacket;
+import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.PostgreSQLTextCell;
 import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.simple.PostgreSQLComQueryPacket;
 import org.apache.shardingsphere.database.protocol.postgresql.packet.generic.PostgreSQLCommandCompletePacket;
 import org.apache.shardingsphere.database.protocol.postgresql.packet.handshake.PostgreSQLParameterStatusPacket;
+import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.extended.PostgreSQLColumnType;
+import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.extended.bind.protocol.util.PostgreSQLTextBitUtils;
+import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.extended.bind.protocol.util.PostgreSQLTextBoolUtils;
 import org.apache.shardingsphere.infra.spi.type.typed.TypedSPILoader;
 import org.apache.shardingsphere.proxy.backend.handler.ProxyBackendHandler;
 import org.apache.shardingsphere.proxy.backend.handler.ProxyBackendHandlerFactory;
 import org.apache.shardingsphere.proxy.backend.handler.ProxySQLComQueryParser;
+import org.apache.shardingsphere.proxy.backend.response.data.QueryResponseCell;
+import org.apache.shardingsphere.proxy.backend.response.data.QueryResponseRow;
 import org.apache.shardingsphere.proxy.backend.response.header.ResponseHeader;
 import org.apache.shardingsphere.proxy.backend.response.header.query.QueryHeader;
 import org.apache.shardingsphere.proxy.backend.response.header.query.QueryResponseHeader;
@@ -54,6 +60,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedList;
+import java.util.List;
 
 /**
  * Command query executor for PostgreSQL.
@@ -126,7 +133,31 @@ public final class PostgreSQLComQueryExecutor implements QueryCommandExecutor {
     
     @Override
     public PostgreSQLPacket getQueryRowPacket() throws SQLException {
-        return new PostgreSQLDataRowPacket(proxyBackendHandler.getRowData().getData());
+        QueryResponseRow queryResponseRow = proxyBackendHandler.getRowData();
+        return new PostgreSQLDataRowPacket(getData(queryResponseRow));
+    }
+    
+    private List<Object> getData(final QueryResponseRow queryResponseRow) {
+        Collection<QueryResponseCell> cells = queryResponseRow.getCells();
+        List<Object> result = new ArrayList<>(cells.size());
+        for (QueryResponseCell each : cells) {
+            result.add(createTextCell(each));
+        }
+        return result;
+    }
+    
+    private PostgreSQLTextCell createTextCell(final QueryResponseCell cell) {
+        return new PostgreSQLTextCell(cell.getJdbcType(), cell.getColumnTypeName().orElse(null), getCellData(cell));
+    }
+    
+    private Object getCellData(final QueryResponseCell cell) {
+        if (PostgreSQLColumnType.isBit(cell.getJdbcType(), cell.getColumnTypeName().orElse(null))) {
+            return PostgreSQLTextBitUtils.getTextValue(cell.getData());
+        }
+        if (PostgreSQLColumnType.isBool(cell.getJdbcType(), cell.getColumnTypeName().orElse(null))) {
+            return PostgreSQLTextBoolUtils.getTextValue(cell.getData());
+        }
+        return cell.getData();
     }
     
     @Override

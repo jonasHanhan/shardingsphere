@@ -49,6 +49,8 @@ public final class PostgreSQLDataRowPacket extends PostgreSQLIdentifierPacket {
         for (Object each : data) {
             if (each instanceof BinaryCell) {
                 writeBinaryValue(payload, (BinaryCell) each);
+            } else if (each instanceof PostgreSQLTextCell) {
+                writeTextValue(payload, (PostgreSQLTextCell) each);
             } else {
                 writeTextValue(payload, each);
             }
@@ -81,6 +83,27 @@ public final class PostgreSQLDataRowPacket extends PostgreSQLIdentifierPacket {
             payload.writeBytes(columnData);
         } else {
             byte[] columnData = each.toString().getBytes(payload.getCharset());
+            payload.writeInt4(columnData.length);
+            payload.writeBytes(columnData);
+        }
+    }
+    
+    private void writeTextValue(final PostgreSQLPacketPayload payload, final PostgreSQLTextCell cell) {
+        Object value = cell.getData();
+        if (null == value) {
+            payload.writeInt4(0xFFFFFFFF);
+        } else if (value instanceof byte[]) {
+            byte[] columnData = encodeByteaText((byte[]) value);
+            payload.writeInt4(columnData.length);
+            payload.writeBytes(columnData);
+        } else if (value instanceof SQLXML) {
+            writeSQLXMLData(payload, value);
+        } else if (value instanceof Boolean) {
+            byte[] columnData = ((Boolean) value ? "t" : "f").getBytes(payload.getCharset());
+            payload.writeInt4(columnData.length);
+            payload.writeBytes(columnData);
+        } else {
+            byte[] columnData = PostgreSQLTextValueFormatter.format(cell).getBytes(payload.getCharset());
             payload.writeInt4(columnData.length);
             payload.writeBytes(columnData);
         }

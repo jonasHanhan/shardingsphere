@@ -28,10 +28,18 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.postgresql.jdbc.TimestampUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.sql.SQLXML;
+import java.sql.Timestamp;
+import java.sql.Types;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.ZoneOffset;
 import java.util.Collections;
 
 import static org.hamcrest.CoreMatchers.is;
@@ -59,14 +67,14 @@ class PostgreSQLDataRowPacketTest {
     
     @Test
     void assertWriteWithNull() {
-        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(null));
+        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new PostgreSQLTextCell(Types.VARCHAR, null, null)));
         actual.write(payload);
         verify(payload).writeInt4(0xFFFFFFFF);
     }
     
     @Test
     void assertWriteWithBytes() {
-        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new byte[]{'a'}));
+        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new PostgreSQLTextCell(Types.BINARY, "bytea", new byte[]{'a'})));
         actual.write(payload);
         byte[] expectedBytes = buildExpectedByteaText(new byte[]{'a'});
         verify(payload).writeInt4(expectedBytes.length);
@@ -76,7 +84,7 @@ class PostgreSQLDataRowPacketTest {
     @Test
     void assertWriteWithSQLXML() throws SQLException {
         when(sqlxml.getString()).thenReturn("value");
-        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(sqlxml));
+        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new PostgreSQLTextCell(Types.SQLXML, "xml", sqlxml)));
         actual.write(payload);
         byte[] valueBytes = "value".getBytes(StandardCharsets.UTF_8);
         verify(payload).writeInt4(valueBytes.length);
@@ -85,8 +93,7 @@ class PostgreSQLDataRowPacketTest {
     
     @Test
     void assertWriteWithString() {
-        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton("value"));
-        assertThat(actual.getData(), is(Collections.singleton("value")));
+        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new PostgreSQLTextCell(Types.VARCHAR, "text", "value")));
         actual.write(payload);
         byte[] valueBytes = "value".getBytes(StandardCharsets.UTF_8);
         verify(payload).writeInt4(valueBytes.length);
@@ -96,9 +103,69 @@ class PostgreSQLDataRowPacketTest {
     @Test
     void assertWriteWithSQLXML4Error() throws SQLException {
         when(sqlxml.getString()).thenThrow(new SQLException("mock"));
-        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(sqlxml));
+        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new PostgreSQLTextCell(Types.SQLXML, "xml", sqlxml)));
         assertThrows(RuntimeException.class, () -> actual.write(payload));
         verify(payload, never()).writeStringEOF(any());
+    }
+    
+    @Test
+    void assertWriteWithTimestampWithoutFractionalSeconds() {
+        Timestamp input = Timestamp.valueOf("1973-06-03 10:30:01");
+        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new PostgreSQLTextCell(Types.TIMESTAMP, "timestamp", input)));
+        actual.write(payload);
+        byte[] expectedBytes = "1973-06-03 10:30:01".getBytes(StandardCharsets.UTF_8);
+        verify(payload).writeInt4(expectedBytes.length);
+        verify(payload).writeBytes(expectedBytes);
+    }
+    
+    @Test
+    void assertWriteWithTimestampWithFractionalSeconds() {
+        Timestamp input = Timestamp.valueOf("1973-06-03 10:30:01.123");
+        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new PostgreSQLTextCell(Types.TIMESTAMP, "timestamp", input)));
+        actual.write(payload);
+        byte[] expectedBytes = "1973-06-03 10:30:01.123".getBytes(StandardCharsets.UTF_8);
+        verify(payload).writeInt4(expectedBytes.length);
+        verify(payload).writeBytes(expectedBytes);
+    }
+    
+    @Test
+    void assertWriteWithTimestampWithTimeZone() {
+        OffsetDateTime input = OffsetDateTime.of(1973, 6, 3, 10, 30, 1, 123000000, ZoneOffset.ofHours(8));
+        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new PostgreSQLTextCell(Types.TIMESTAMP_WITH_TIMEZONE, "timestamptz", input)));
+        actual.write(payload);
+        byte[] expectedBytes = new TimestampUtils(false, null).toString(input).getBytes(StandardCharsets.UTF_8);
+        verify(payload).writeInt4(expectedBytes.length);
+        verify(payload).writeBytes(expectedBytes);
+    }
+    
+    @Test
+    void assertWriteWithDate() {
+        LocalDate input = LocalDate.of(1973, 6, 3);
+        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new PostgreSQLTextCell(Types.DATE, "date", input)));
+        actual.write(payload);
+        byte[] expectedBytes = new TimestampUtils(false, null).toString(input).getBytes(StandardCharsets.UTF_8);
+        verify(payload).writeInt4(expectedBytes.length);
+        verify(payload).writeBytes(expectedBytes);
+    }
+    
+    @Test
+    void assertWriteWithTime() {
+        LocalTime input = LocalTime.of(10, 30, 1);
+        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new PostgreSQLTextCell(Types.TIME, "time", input)));
+        actual.write(payload);
+        byte[] expectedBytes = new TimestampUtils(false, null).toString(input).getBytes(StandardCharsets.UTF_8);
+        verify(payload).writeInt4(expectedBytes.length);
+        verify(payload).writeBytes(expectedBytes);
+    }
+    
+    @Test
+    void assertWriteWithTimeWithTimeZone() {
+        OffsetTime input = OffsetTime.of(10, 30, 1, 0, ZoneOffset.ofHours(8));
+        PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new PostgreSQLTextCell(Types.TIME_WITH_TIMEZONE, "timetz", input)));
+        actual.write(payload);
+        byte[] expectedBytes = new TimestampUtils(false, null).toString(input).getBytes(StandardCharsets.UTF_8);
+        verify(payload).writeInt4(expectedBytes.length);
+        verify(payload).writeBytes(expectedBytes);
     }
     
     @Test
@@ -111,7 +178,7 @@ class PostgreSQLDataRowPacketTest {
     
     @Test
     void assertWriteBinaryInt4() {
-        final int value = 12345678;
+        int value = 12345678;
         PostgreSQLDataRowPacket actual = new PostgreSQLDataRowPacket(Collections.singleton(new BinaryCell(PostgreSQLColumnType.INT4, value)));
         actual.write(payload);
         verify(payload).writeInt2(1);

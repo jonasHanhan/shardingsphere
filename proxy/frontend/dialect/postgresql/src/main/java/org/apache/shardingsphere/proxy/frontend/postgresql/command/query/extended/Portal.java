@@ -29,6 +29,7 @@ import org.apache.shardingsphere.database.protocol.postgresql.packet.command.que
 import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.PostgreSQLEmptyQueryResponsePacket;
 import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.PostgreSQLNoDataPacket;
 import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.PostgreSQLRowDescriptionPacket;
+import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.PostgreSQLTextCell;
 import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.extended.PostgreSQLColumnType;
 import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.extended.bind.protocol.util.PostgreSQLTextBitUtils;
 import org.apache.shardingsphere.database.protocol.postgresql.packet.command.query.extended.bind.protocol.util.PostgreSQLTextBoolUtils;
@@ -180,7 +181,7 @@ public final class Portal {
         List<QueryResponseCell> columns = new ArrayList<>(cells);
         for (int i = 0; i < columns.size(); i++) {
             PostgreSQLValueFormat format = determineValueFormat(i);
-            result.add(PostgreSQLValueFormat.BINARY == format ? createBinaryCell(columns.get(i)) : getCellData(columns.get(i)));
+            result.add(PostgreSQLValueFormat.BINARY == format ? createBinaryCell(columns.get(i)) : createTextCell(columns.get(i)));
         }
         return result;
     }
@@ -191,6 +192,10 @@ public final class Portal {
     
     private BinaryCell createBinaryCell(final QueryResponseCell cell) {
         return new BinaryCell(PostgreSQLColumnType.valueOfJDBCType(cell.getJdbcType(), cell.getColumnTypeName().orElse(null)), getCellData(cell));
+    }
+    
+    private PostgreSQLTextCell createTextCell(final QueryResponseCell cell) {
+        return new PostgreSQLTextCell(cell.getJdbcType(), cell.getColumnTypeName().orElse(null), getCellData(cell));
     }
     
     private Object getCellData(final QueryResponseCell cell) {
